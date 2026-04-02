@@ -38,12 +38,26 @@ class Recommender:
         self.songs = songs
 
     def recommend(self, user: UserProfile, k: int = 5) -> List[Song]:
-        # TODO: Implement recommendation logic
-        return self.songs[:k]
+        user_prefs = {
+            "genre":  user.favorite_genre.lower(),
+            "mood":   user.favorite_mood.lower(),
+            "energy": user.target_energy,
+        }
+        song_dicts = [s.__dict__ for s in self.songs]
+        results = recommend_songs(user_prefs, song_dicts, k)
+        # Return only the Song objects in ranked order
+        scored_ids = [r[0]["id"] for r in results]
+        song_map = {s.id: s for s in self.songs}
+        return [song_map[sid] for sid in scored_ids]
 
     def explain_recommendation(self, user: UserProfile, song: Song) -> str:
-        # TODO: Implement explanation logic
-        return "Explanation placeholder"
+        user_prefs = {
+            "genre":  user.favorite_genre.lower(),
+            "mood":   user.favorite_mood.lower(),
+            "energy": user.target_energy,
+        }
+        _, reasons = score_song(user_prefs, song.__dict__)
+        return " | ".join(reasons)
 
 def load_songs(csv_path: str) -> List[Dict]:
     """
@@ -135,16 +149,22 @@ def score_song(user_prefs: Dict, song: Dict) -> Tuple[float, List[str]]:
 
 def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5) -> List[Tuple[Dict, float, str]]:
     """
-    Scores every song, sorts descending, and returns the top-k results.
-    Required by src/main.py
+    Scores every song in the catalog, ranks them highest-to-lowest,
+    and returns the top k results.
+
+    Uses sorted() instead of .sort() so the original songs list is
+    never mutated — the caller's data stays unchanged.
 
     Return format: list of (song_dict, score, explanation_string)
     """
-    scored = []
-    for song in songs:
-        score, reasons = score_song(user_prefs, song)
-        explanation = " | ".join(reasons)
-        scored.append((song, score, explanation))
+    # Score every song and pack results into (song, score, explanation) tuples
+    scored = [
+        (song, score, " | ".join(reasons))
+        for song in songs
+        for score, reasons in [score_song(user_prefs, song)]
+    ]
 
-    scored.sort(key=lambda x: x[1], reverse=True)
-    return scored[:k]
+    # sorted() returns a new list ranked highest score first
+    ranked = sorted(scored, key=lambda x: x[1], reverse=True)
+
+    return ranked[:k]
